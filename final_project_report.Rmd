@@ -6,7 +6,7 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
 ```
 
 ```{r}
@@ -22,15 +22,29 @@ library(smooth)
 library(sarima)
 ```
 
-India 20 year temp data - This is the data I will use
-From this kaggle: https://www.kaggle.com/jonathanbouchet/new-delhi-20-years-of-weather-data/data?select=testset.csv
+# Introduction and Objectives 
+
+ADD INTRO AND LITERATURE REVIEW
+
+The objectives for this project will be to assess what type of time series model best represents weather changes in New Delhi. We will also attempt to forecast weather patterns into the future. 
+
+
+# Data 
+
+The dataset captures daily weather in New Delhi, India from 11/1/1996 to 4/27/2017 for average hourly temperature, wind speed, humidity and mean air pressure. This data comes from kaggle: https://www.kaggle.com/jonathanbouchet/new-delhi-20-years-of-weather-data/data?select=testset.csv. 
 
 ```{r}
 # load data
-india_20 <- read.csv("Final Project/data/india_20.csv")
+india_20 <- read.csv("data/india_20.csv")
+```
 
+# Analysis
+
+## Data Cleaning and Exploratory Analysis 
+
+```{r, eval=FALSE, echo=FALSE}
 # clean data with dates, group by hour
-x <- india_20 %>%
+in_daily <- india_20 %>%
   mutate(datetime_utc = gsub("-.*", "", datetime_utc), 
          date = ymd(datetime_utc), 
          X_hum = as.numeric(X_hum)) %>%
@@ -41,39 +55,11 @@ x <- india_20 %>%
             visibility = mean(X_vism, na.rm = TRUE))
 
 # get rid of visibility outlier by swapping it with day before
-max_vis <- which.max(x$visibility)
-x$visibility[max_vis] <- x$visibility[max_vis - 1]
-
-ggplot(x, aes(x = date, y = temp)) + 
-  geom_line() + 
-  labs(title = "Average Daily Temperature (1996 - 2017)", 
-       y = "Temperature (Celcius)", 
-       x = "Year") + 
-  theme_bw()
-
-ggplot(x, aes(x = date, y = humidity)) + 
-  geom_line() + 
-  labs(title = "Average Daily Humidity (1996 - 2017)", 
-       y = "Humidity", 
-       x = "Year") + 
-  theme_bw()
-
-ggplot(x, aes(x = date, y = dew_pt_temp)) + 
-  geom_line() + 
-  labs(title = "Average Daily Dew Point Temp. (1996 - 2017)", 
-       y = "Dew Point Temperature (Degrees Celcius)", 
-       x = "Year") + 
-  theme_bw()
-
-ggplot(x, aes(x = date, y = visibility)) + 
-  geom_line() + 
-  labs(title = "Average Daily Visibility (1996 - 2017)", 
-       y = "Visibility", 
-       x = "Year") + 
-  theme_bw()
+max_vis <- which.max(in_daily$visibility)
+in_daily$visibility[max_vis] <- in_daily$visibility[max_vis - 1]
 
 # aggregate plots daily
-x %>%
+in_daily %>%
   pivot_longer(cols = 2:5) %>%
   mutate(name = case_when(
     name == "temp" ~ "Temperature (Degrees Celcius)", 
@@ -90,20 +76,13 @@ x %>%
        y = "")
 ```
 
+First we clean the data. The raw data comes in an hourly format, so first we transform to a daily average between 1996 and 2017. We find that these series may be too sensitive, and we also note that daily weather patterns may be of less interest than monthly average weather patterns. Thus, we further transform the data from daily average weather patters to montly average weather patterns. Below we can see the time series for monthly average dew point temperature, humidity, temperature, and visibility in New Delhi between November 1996 to April 2017. 
+
 ```{r}
 # Aggregate plots monthly 
 
-# clean data with dates, group by hour
-x <- india_20 %>%
-  mutate(date = gsub("-.*", "", datetime_utc), 
-         X_hum = as.numeric(X_hum)) %>%
-  group_by(date) %>%
-  summarize(temp = mean(X_tempm, na.rm = TRUE), 
-            humidity = mean(X_hum, na.rm = TRUE), 
-            dew_pt_temp = mean(X_dewptm, na.rm = TRUE), 
-            visibility = mean(X_vism, na.rm = TRUE))
-
-x <- india_20 %>%
+# clean data with dates, group by month
+in_monthly <- india_20 %>%
   mutate(datetime_utc = substr(datetime_utc,1,6), 
          date = ym(datetime_utc), 
          X_hum = as.numeric(X_hum))  %>%
@@ -114,11 +93,11 @@ x <- india_20 %>%
             visibility = mean(X_vism, na.rm = TRUE))
 
 # get rid of visibility outlier by swapping it with day before
-max_vis <- which.max(x$visibility)
-x$visibility[max_vis] <- x$visibility[max_vis - 1]
+max_vis <- which.max(in_monthly$visibility)
+in_monthly$visibility[max_vis] <- in_monthly$visibility[max_vis - 1]
 
 # aggregate plots daily
-x %>%
+in_monthly %>%
   pivot_longer(cols = 2:5) %>%
   mutate(name = case_when(
     name == "temp" ~ "Temperature (Degrees Celcius)", 
@@ -135,18 +114,12 @@ x %>%
        y = "")
 ```
 
+## Methods and Models
 
-# Introduction 
-
-
-# Data 
-
-The dataset captures daily weather in New Delhi, India from 1/1/2013 to 4/27/2017 for mean daily temperature, wind speed, humidity and mean air pressure. This data comes from kaggle: https://www.kaggle.com/jonathanbouchet/new-delhi-20-years-of-weather-data/data?select=testset.csv. 
-
-# Methods
+To evaluate what type of time series best represents each weather series, we take November 1996 to March 2016 as a training dataset, with April 2016 to April 2017 as our test dataset. We will then choose a final model based on performance on the test set. We will refit the best model on all data, and forecast weather patterns from May 2017 to May 2030. This is a relatively large forecast period, however, it will be interesting to understand potential weather patterns about 10 years into the future. 
 
 
 # Results 
 
 
-# Discussion
+# Summary and Conclusions
