@@ -26,14 +26,20 @@ library(skimr)
 
 # Introduction and Objectives 
 
-ADD INTRO AND LITERATURE REVIEW
+Most climate research cites warmer temperatures, more severe storms, increased drought, etc. Studies have shown that urban centers are generally experiencing a gradual rise in temperature (Tuholske et. al., 2021). However, climate change does not impact all cities in the same way. In New Delhi, India, studies have actually shown that temperatures are getting cooler. From 2016 to 2020, the mean annual temperature of Delhi dropped by 1.3 degrees Celcius (European Centre for Medium-Range Weather Forecasts), and the data shows that summer temperatures in Delhi have been slowly declining. 
 
-The objectives for this project will be to assess what type of time series model best represents weather changes in New Delhi. We will also attempt to forecast weather patterns into the future. 
+This is an important phenomenon to understand, as India is particularly prone to hydrometeorological disasters, which are increasing due to climate change (Prashar et. al, 2012). 80% of the country's population resides in extremely climate-vulnerable areas, and the frequency of extreme weather events has increased by about 200% since 2005 (Council on Energy, Environment and Water). Abnormal fluctuations in temperatures due to climate change have also accounted for over 700,000 deaths annually in India, about 94% of which are caused by extreme cold temperatures (Zhao et. al, 2019). In New Delhi, cooler weather has also been attributed to the buildup of smog and worsening air quality since 2016 (Yandap and Rawal, 2016). 
 
+In this paper, we aim to evaluate the claim that temperature has been getting cooler in New Delhi by building a time series model of monthly average temperature from 1996 to 2017. We will also evaluate trends in visibility (as a proxy for smog) and dew point temperature, and attempt to forecast weather patterns in the future. 
+
+
+Some info on dew point temp: https://www.buffalo.edu/news/releases/2018/09/030.html
 
 # Data 
 
-The dataset captures daily weather in New Delhi, India from 11/1/1996 to 4/27/2017 for average hourly temperature, wind speed, humidity and mean air pressure. This data comes from kaggle: https://www.kaggle.com/jonathanbouchet/new-delhi-20-years-of-weather-data/data?select=testset.csv. The below table summarizes the data structure.
+The dataset we use captures daily weather in New Delhi, India from 11/1/1996 to 4/27/2017, for average daily temperature, dew point temperature, humidity and visibility (https://www.kaggle.com/jonathanbouchet/new-delhi-20-years-of-weather-data/data?select=testset.csv). The data itself comes from Weather Underground, which provides daily weather data in New Delhi collected from the Safdarjung Airport Station.  
+
+The below tables summarize the data structure and show the first 10 rows of the dataset.
 
 ```{r}
 # load data
@@ -56,23 +62,6 @@ in_daily <- india_20 %>%
 max_vis <- which.max(in_daily$visibility)
 in_daily$visibility[max_vis] <- in_daily$visibility[max_vis - 1]
 
-# aggregate plots daily
-#in_daily %>%
-#  pivot_longer(cols = 2:5) %>%
-#  mutate(name = case_when(
-#    name == "temp" ~ "Temperature (Degrees Celcius)", 
-#    name == "humidity" ~ "Humidity (%)", 
-#    name == "visibility" ~ "Visibility (km)", 
-#    name == "dew_pt_temp" ~ "Dew Point Temperature (Degrees Celcius)"
-#  )) %>%
-#  ggplot(., aes(x = date, y = value)) + 
-#  geom_line() + 
-#  facet_wrap(~name, scales = "free") + 
-#  theme_bw() + 
-#  labs(title = "Daily Average Weather in New Delhi (1996 - 2017)", 
-#       x = "Year", 
-#       y = "")
-
 # clean data with dates, group by month
 in_monthly <- india_20 %>%
   mutate(datetime_utc = substr(datetime_utc,1,6), 
@@ -90,6 +79,7 @@ in_monthly$visibility[max_vis] <- in_monthly$visibility[max_vis - 1]
 ```
 
 ```{r}
+# Make data structure table
 Unit <- c("Date", "Degrees Celcius", "%", "Degrees Celcius", "Km")
 Min <- apply(in_monthly, 2, min)
 Max <- apply(in_monthly, 2, max)
@@ -102,8 +92,6 @@ data.frame(Unit, Min, Max, Mean) %>%
   kbl(., align = "c", 
       caption = "Data Structure Summary")
 ```
-
-We also show the first 10 rows of the monthly weather data below: 
 
 ```{r}
 # first 10 rows of data
@@ -118,9 +106,13 @@ head(in_monthly, 10) %>%
 
 ## Data Cleaning and Exploratory Analysis 
 
-First we clean the data. The raw data comes in an hourly format, so first we transform to a daily average between 1996 and 2017. We find that these series may be too sensitive, and we also note that daily weather patterns may be of less interest than monthly average weather patterns. Thus, we further transform the data from daily average weather patters to montly average weather patterns. Below we can see the time series for monthly average dew point temperature, humidity, temperature, and visibility in New Delhi between November 1996 to April 2017. 
+First we clean the data. The raw data comes in an hourly format, so first we transform to a daily average between 1996 and 2017. We find that these series may be too sensitive, and we also note that daily weather patterns may be of less interest than monthly average weather patterns. Thus, we further transform the data from daily average weather patters to monthly average weather patterns. Below we can see the time series for monthly average dew point temperature, humidity, temperature, and visibility in New Delhi between November 1996 to April 2017. 
 
-```{r}
+Based on the plot, it does not seem like temperature has a drastically decreasing trend, but it will be interesting to build a time series model that may be able to detect smaller change in temperature over time. One goal of the project is to also understand the difference in dew point temperature versus temperature. Meteorologists and climate change researchers often focus on dew point temperature, which is the temperature at which air is saturated with water vapor. In the below plot, we see that in cooler months, dew point temperature seems to be rising slightly over time. Visibility does seem to have a decreasing trend from 1996 to 2015, and potentially a slight upward trend after 2015. It is difficult to detect any trend in the humidity series based on the below plot. We decide not to focus on humidity, as meteorologists and climate researchers tend not to focus on this measure as a proxy for climate change. 
+
+From the below plots, we note a yearly seasonality. It does not look like there are multiple seasonalities to consider, but we will examine this further. 
+
+```{r, fig.height=3, fig.width=5, fig.align='center'}
 # Aggregate plots monthly 
 in_monthly %>%
   pivot_longer(cols = 2:5) %>%
@@ -143,10 +135,296 @@ in_monthly %>%
 
 To evaluate what type of time series best represents each weather series, we take November 1996 to March 2016 as a training dataset, with April 2016 to April 2017 as our test dataset. We will then choose a final model based on performance on the test set. We will refit the best model on all data, and forecast weather patterns from May 2017 to May 2030. This is a relatively large forecast period, however, it will be interesting to understand potential weather patterns about 10 years into the future. 
 
-First we will examine the temperature time series. 
+```{r}
+# create time series objects for test, training and whole data
+# create raw test and train
+temp_train <- in_monthly %>%
+  filter(date < "2016-04-01") %>%
+  pull(temp)
 
+temp_test <- in_monthly %>%
+  filter(date >= "2016-04-01") %>%
+  pull(temp)
+
+vis_train <- in_monthly %>%
+  filter(date < "2016-04-01") %>%
+  pull(visibility)
+
+vis_test <- in_monthly %>%
+  filter(date >= "2016-04-01") %>%
+  pull(visibility)
+
+
+dpt_train <- in_monthly %>%
+  filter(date < "2016-04-01") %>%
+  pull(dew_pt_temp)
+
+dpt_test <- in_monthly %>%
+  filter(date >= "2016-04-01") %>%
+  pull(dew_pt_temp)
+
+#hum_train <- in_monthly %>%
+#  filter(date < "2016-04-01") %>%
+#  pull(humidity)
+
+#hum_test <- in_monthly %>%
+#  filter(date >= "2016-04-01") %>%
+#  pull(humidity)
+
+# create ts objects
+temp_train_ts <- ts(temp_train, start = c(1996, 11), frequency = 12)
+temp_test_ts <- ts(temp_test, start = c(2016, 4), frequency = 12)
+temp_ts <- ts(in_monthly$temp, start = c(1996, 11), frequency = 12)
+
+dpt_train_ts <- ts(dpt_train, start = c(1996, 11), frequency = 12)
+dpt_test_ts <- ts(dpt_test, start = c(2016, 4), frequency = 12)
+dpt_ts <- ts(in_monthly$dew_pt_temp, start = c(1996, 11), frequency = 12)
+
+vis_train_ts <- ts(vis_train, start = c(1996, 11), frequency = 12)
+vis_test_ts <- ts(vis_test, start = c(2016, 4), frequency = 12)
+vis_ts <- ts(in_monthly$visibility, start = c(1996, 11), frequency = 12)
+
+#hum_train_ts <- ts(hum_train, start = c(1996, 11), frequency = 12)
+#hum_test_ts <- ts(hum_test, start = c(2016, 4), frequency = 12)
+#hum_ts <- ts(in_monthly$humidity, start = c(1996, 11), frequency = 12)
+```
+
+
+First we examine the ACF and PACF of each series for the training data. From the ACF plots we can see clear seasonality in each of the three series. We note that the ACF for visibility shows much smaller negative correlations than the ACF plots for temperature or dew point temperature. For each of the series', the PACFs plots show a slow exponential decay over time.  
+
+```{r, fig.height = 5}
+# ACFs
+par(mfrow = c(1, 3))
+Acf(temp_train, lag = 40, plot = T, main = "ACF for Temperature")
+Acf(dpt_train, lag = 40, plot = T, main = "ACF for Dew Pt. Temperature")
+Acf(vis_train, lag = 40, plot = T, main = "ACF for Visibility")
+```
+
+```{r}
+# PACFs
+par(mfrow = c(1, 3))
+Pacf(temp_train, lag = 40, plot = T, main = "PACF for Temperature")
+Pacf(dpt_train, lag = 40, plot = T, main = "PACF for Dew Pt. Temperature")
+Pacf(vis_train, lag = 40, plot = T, main = "PACF for Visibility")
+```
+
+### Manually Fitting Seasonal ARIMA Models
+
+We first fit a seasonal ARIMA to all three series: temperature, dew point temperature, and visibility. We fit these models manually by examining the ACF and PACF plot for differenced series and seasonal lags. First we need to decompose each series. From the below decomposition plots, we can more easily see the increasing trend of dew point temperature over time. We also see a clear decrease in visibility over time. It is more difficult to assess any trend for change in temperature over time. We also see a clear yearly seasonality for all three series. 
+
+```{r}
+# decompose all series
+decompose_temp_train <- decompose(temp_train_ts, "additive")
+#decompose_temp_test <- decompose(temp_test_ts, "additive")
+
+decompose_dpt_train <- decompose(dpt_train_ts, "additive")
+#decompose_dpt_test <- decompose(dpt_test_ts, "additive")
+
+decompose_vis_train <- decompose(vis_train_ts, "additive")
+#decompose_vis_test <- decompose(vis_test_ts, "additive")
+
+
+# function to add title to plot
+my_plot.decomposed.ts = function(x, title="", ...) {
+  xx <- x$x
+  if (is.null(xx)) 
+    xx <- with(x, if (type == "additive") 
+      random + trend + seasonal
+      else random * trend * seasonal)
+  plot(cbind(observed = xx, trend = x$trend, seasonal = x$seasonal,
+             random = x$random), 
+       main=title, ...)
+}
+
+# create plots
+par(mfrow = c(1, 3))
+my_plot.decomposed.ts(decompose_temp_train, "Decomposition of Temperature")
+my_plot.decomposed.ts(decompose_dpt_train, "Decomposition of Dew Pt. Temp")
+my_plot.decomposed.ts(decompose_vis_train, "Decomposition of Visibility")
+```
+
+We then create non-seasonal series for temperature, dew point temperature, and visibility. We find that the non-seasonal temperature series does not need to be differenced, the dew point temperature series needs to be differenced once, and the visibility series needs to be differenced once.
+
+```{r}
+# create non-seasonal series 
+deseasonal_temp_train <- seasadj(decompose_temp_train)
+deseasonal_dpt_train <- seasadj(decompose_dpt_train)
+deseasonal_vis_train <- seasadj(decompose_vis_train)
+
+# find out how many times we need to difference 
+cat("Number of differencing needed for Temperature: ",
+    ndiffs(deseasonal_temp_train))
+cat("Number of differencing needed for Dew Pt. Temp.: ",
+    ndiffs(deseasonal_dpt_train))
+cat("Number of differencing needed for Visibility: ",
+    ndiffs(deseasonal_vis_train))
+
+# difference the series 
+deseasonal_dpt_train_diff <- diff(deseasonal_dpt_train, differences = 1,
+                                  lag = 1)
+deseasonal_vis_train_diff <- diff(deseasonal_vis_train, differences = 1, 
+                                  lag = 1)
+```
+
+Next we will figure out how many times we need to difference the seasonal component of each series, and find that each series needs to be differenced once. We then look at the both seasonal and non-seasonal combined differenced series to determine the orders for our seasonal ARIMA models.  
+
+```{r}
+# examine number of differences needed for seasonal component
+cat("Number of seasonal differencing needed for Temperature: ",
+    nsdiffs(temp_train_ts))
+cat("Number of seasonal differencing needed for Dew Pt. Temp.: ",
+    nsdiffs(dpt_train_ts))
+cat("Number of seasonal differencing needed for Visibility: ",
+    nsdiffs(vis_train_ts))
+
+# create twice differenced series 
+temp_train_both_diff <- diff(temp_train_ts, lag = 12, differences = 1)
+
+dpt_train_trend_diff <- diff(dpt_train_ts, lag = 1, differences = 1)
+dpt_train_both_diff <- diff(dpt_train_trend_diff, lag = 12, differences = 1)
+
+vis_train_trend_diff <- diff(vis_train_ts, lag = 1, differences = 1)
+vis_train_both_diff <- diff(vis_train_trend_diff, lag = 1, differences = 1)
+```
+
+Next we examine the ACFs and PACFs plots for the differenced series'. For the Temperature series based on the ACF and PACF plots, we will fit an ARIMA(p = 1, d = 0, q = 2)(P = 0, D = 1, Q = 1)_[s=12]. For the Dew Point Temperature series, we will fit an ARIMA(p = 1, d = 1, q = 1)(P = 0, D = 1, Q = 1). For the Visibility series, we will fit an ARIMA(p = 1, d = 1, q = 1)(P = 1, D = 1, Q = 1). We go ahead and fit these models then examine the fit. 
+
+```{r}
+# examine the ACFs for differences series 
+par(mfrow = c(2, 3))
+acf(temp_train_both_diff, lag = 60, main = "ACF: Differenced Temp.")
+acf(dpt_train_both_diff, lag = 60, main = "ACF: Differenced Dew Pt.")
+acf(vis_train_both_diff, lag = 60, main = "ACF: Differenced Visibility")
+
+Pacf(temp_train_both_diff, lag = 60, main = "PACF: Differenced Temp.")
+Pacf(dpt_train_both_diff, lag = 60, main = "PACF: Differenced Dew Pt.")
+Pacf(vis_train_both_diff, lag = 60, main = "PACF: Differenced Visibility")
+
+```
+
+
+```{r}
+# manually fitting the SARIMA models
+SARIMA_manual_temp <- arima(temp_train_ts, order = c(1, 0, 2), 
+                            seasonal = c(0, 1, 1))
+SARIMA_manual_dpt <- arima(dpt_train_ts, order = c(1, 1, 1), 
+                           seasonal = c(0, 1, 1))
+SARIMA_manual_vis <- arima(vis_train_ts, order = c(1, 1, 1), 
+                           seasonal = c(0, 1, 1))
+
+```
+
+We see below that residuals for our model on temperature and visibility actually do not look so random, and there looks to still be some seasonality patterns. The residuals for the dew point temperature series look more random with no pattern. We note this as a limitation of manually fitting seasonal ARIMA models. The methodology used above to choose the order of the models based on PACF and ACF plots is often difficult and can be prone to errors. In the next phase of modeling, we will compare the manual models built here with autofitted seasonal ARIMA models. 
+
+Lastly, we obtain test accuracy for the model of temperature, dew point temperature, and visibility. We will compare these test accuracies to other models in the results section of our paper. To obtain test accuracy, we use the model to forecast for our test period of April 2016 to April 2017, and then compute accuracy against our true values from April 2016 to April 2017.  
+
+```{r}
+# examine residuals - temperature
+par(mfrow=c(1,3))
+ts.plot(SARIMA_manual_temp$residuals)
+Acf(SARIMA_manual_temp$residuals,lag.max=40, main = "ACF: Temp. Residuals")
+Pacf(SARIMA_manual_temp$residuals,lag.max=40, main = "PACF: Temp. Residuals")
+
+```
+
+```{r}
+# examine residuals - dew pt temp
+par(mfrow=c(1,3))
+ts.plot(SARIMA_manual_dpt$residuals)
+Acf(SARIMA_manual_dpt$residuals,lag.max=40, main = "ACF: Temp. Residuals")
+Pacf(SARIMA_manual_dpt$residuals,lag.max=40, main = "PACF: Temp. Residuals")
+
+```
+
+```{r}
+# examine residuals - temperature
+par(mfrow=c(1,3))
+ts.plot(SARIMA_manual_temp$residuals)
+Acf(SARIMA_manual_temp$residuals,lag.max=40, main = "ACF: Temp. Residuals")
+Pacf(SARIMA_manual_temp$residuals,lag.max=40, main = "PACF: Temp. Residuals")
+
+```
+
+```{r}
+# get test accuracy
+temp_forecast <- forecast::forecast(SARIMA_manual_temp)
+temp_pred <- temp_forecast$mean[2:14]
+SARIMA_manual_temp_acc <- accuracy(temp_pred, temp_test)
+
+dpt_forecast <- forecast::forecast(SARIMA_manual_dpt)
+dpt_pred <- dpt_forecast$mean[2:14]
+SARIMA_manual_dpt_acc <- accuracy(dpt_pred, dpt_test)
+
+vis_forecast <- forecast::forecast(SARIMA_manual_vis)
+vis_pred <- vis_forecast$mean[2:14]
+SARIMA_manual_vis_acc <- accuracy(vis_pred, vis_test)
+```
+
+
+### Automatically Fitting Seasonal ARIMA Models
+
+Next we will fit seasonal ARIMA models and compare to the models fit above. 
+
+
+
+```{r}
+# fit sarima autofit on temperature
+SARIMA_autofit_temp <- auto.arima(temp_train_ts)
+checkresiduals(SARIMA_autofit_temp)
+
+# fit sarima autofit on dew point temp
+SARIMA_autofit_dpt <- auto.arima(dpt_train_ts)
+checkresiduals(SARIMA_autofit_dpt)
+
+# fit sarima autofit on visibility
+SARIMA_autofit_vis <- auto.arima(vis_train_ts)
+checkresiduals(SARIMA_autofit_vis)
+
+# fit sarima autofit on humidity
+SARIMA_autofit_hum <- auto.arima(hum_train_ts)
+checkresiduals(SARIMA_autofit_hum)
+
+```
+
+
+```{r}
+# SARIMA forecast for temp
+SARIMA_forecast_temp <- forecast::forecast(SARIMA_autofit_temp,h=13)
+SARIMA_scores_temp <- accuracy(SARIMA_forecast_temp$mean, temp_test)
+SARIMA_scores_temp
+plot(SARIMA_forecast_temp)
+
+# SARIMA forecast for dew point temp
+SARIMA_forecast_dpt <- forecast::forecast(SARIMA_autofit_dpt,h=13)
+SARIMA_scores_dpt <- accuracy(SARIMA_forecast_dpt$mean, dpt_test)
+SARIMA_scores_dpt
+plot(SARIMA_forecast_dpt)
+
+# SARIMA forecast for visibility
+SARIMA_forecast_vis <- forecast::forecast(SARIMA_autofit_vis,h=13)
+SARIMA_scores_vis <- accuracy(SARIMA_forecast_vis$mean, vis_test)
+SARIMA_scores_vis
+plot(SARIMA_forecast_vis)
+
+# SARIMA forecast for humidity
+SARIMA_forecast_hum <- forecast::forecast(SARIMA_autofit_hum,h=13)
+SARIMA_scores_hum <- accuracy(SARIMA_forecast_hum$mean, hum_test)
+SARIMA_scores_hum
+plot(SARIMA_forecast_hum)
+```
 
 # Results 
 
 
 # Summary and Conclusions
+
+# Sources
+Tuholske, Cascade, et al. "Global urban population exposure to extreme heat." Proceedings of the National Academy of Sciences 118.41 (2021).
+
+Zhao, Qi, et al. "Global, regional, and national burden of mortality associated with non-optimal ambient temperatures from 2000 to 2019: a three-stage modelling study." The Lancet Planetary Health 5.7 (2021): e415-e425.
+
+Yadav, Sankalp, and Gautam Rawal. "The great Delhi smog." Indian Journal of Immunology and Respiratory Medicine 1.4 (2016): 78-79.
+
+Prashar, Sunil, Rajib Shaw, and Yukiko Takeuchi. "Assessing the resilience of Delhi to climate-related disasters: A comprehensive approach." Natural Hazards 64.2 (2012): 1609-1624.
+
+Nealon, Cory. "How will Climate Change Stress the Power Grid? Hint: Look at Dew Point Temperatures." News Center, University of Buffalo. https://www.buffalo.edu/news/releases/2018/09/030.html
