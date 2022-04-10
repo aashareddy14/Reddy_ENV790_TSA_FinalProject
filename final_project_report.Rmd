@@ -9,7 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
 ```
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 # load libraries
 library(lubridate)
 library(ggplot2)
@@ -22,6 +22,7 @@ library(smooth)
 library(sarima)
 library(kableExtra)
 library(skimr)
+library(zoo)
 ```
 
 # Introduction and Objectives 
@@ -32,8 +33,6 @@ This is an important phenomenon to understand, as India is particularly prone to
 
 In this paper, we aim to evaluate the claim that temperature has been getting cooler in New Delhi by building a time series model of monthly average temperature from 1996 to 2017. We will also evaluate trends in visibility (as a proxy for smog) and dew point temperature, and attempt to forecast weather patterns in the future. 
 
-
-Some info on dew point temp: https://www.buffalo.edu/news/releases/2018/09/030.html
 
 # Data 
 
@@ -106,13 +105,13 @@ head(in_monthly, 10) %>%
 
 ## Data Cleaning and Exploratory Analysis 
 
-First we clean the data. The raw data comes in an hourly format, so first we transform to a daily average between 1996 and 2017. We find that these series may be too sensitive, and we also note that daily weather patterns may be of less interest than monthly average weather patterns. Thus, we further transform the data from daily average weather patters to monthly average weather patterns. Below we can see the time series for monthly average dew point temperature, humidity, temperature, and visibility in New Delhi between November 1996 to April 2017. 
+First we clean the data. The raw data comes in an hourly format, so first we transform to a daily average between 1996 and 2017. We note that there are no issues with NA values in this dataset. However, there was one error in the Visilibity series due to an outlier. The maximum value of the Visibility series was 146.7511 km, which is about 76 standard deviations above the median value. We assume that this is an error in measurement and input the temperature fromt he day before. After this imputation, there are no other outliers we need to consider. We also find that these series may be too sensitive, and we also note that daily weather patterns may be of less interest than monthly average weather patterns. Thus, we further transform the data from daily average weather patters to monthly average weather patterns. Below we can see the time series for monthly average dew point temperature, humidity, temperature, and visibility in New Delhi between November 1996 to April 2017. 
 
 Based on the plot, it does not seem like temperature has a drastically decreasing trend, but it will be interesting to build a time series model that may be able to detect smaller change in temperature over time. One goal of the project is to also understand the difference in dew point temperature versus temperature. Meteorologists and climate change researchers often focus on dew point temperature, which is the temperature at which air is saturated with water vapor. In the below plot, we see that in cooler months, dew point temperature seems to be rising slightly over time. Visibility does seem to have a decreasing trend from 1996 to 2015, and potentially a slight upward trend after 2015. It is difficult to detect any trend in the humidity series based on the below plot. We decide not to focus on humidity, as meteorologists and climate researchers tend not to focus on this measure as a proxy for climate change. 
 
 From the below plots, we note a yearly seasonality. It does not look like there are multiple seasonalities to consider, but we will examine this further. 
 
-```{r, fig.height=3, fig.width=5, fig.align='center'}
+```{r, fig.height=5, fig.width=7, fig.align='center'}
 # Aggregate plots monthly 
 in_monthly %>%
   pivot_longer(cols = 2:5) %>%
@@ -133,7 +132,7 @@ in_monthly %>%
 
 ## Methods and Models
 
-To evaluate what type of time series best represents each weather series, we take November 1996 to March 2016 as a training dataset, with April 2016 to April 2017 as our test dataset. We will then choose a final model based on performance on the test set. We will refit the best model on all data, and forecast weather patterns from May 2017 to May 2030. This is a relatively large forecast period, however, it will be interesting to understand potential weather patterns about 10 years into the future. 
+To evaluate what type of time series best represents each weather series, we take November 1996 to March 2016 as a training dataset, with April 2016 to April 2017 as our test dataset. We will then choose a final model based on performance on the test set. We will refit the best model on all data, and forecast weather patterns from May 2017 to May 2020. 
 
 ```{r}
 # create time series objects for test, training and whole data
@@ -192,7 +191,7 @@ vis_ts <- ts(in_monthly$visibility, start = c(1996, 11), frequency = 12)
 
 First we examine the ACF and PACF of each series for the training data. From the ACF plots we can see clear seasonality in each of the three series. We note that the ACF for visibility shows much smaller negative correlations than the ACF plots for temperature or dew point temperature. For each of the series', the PACFs plots show a slow exponential decay over time.  
 
-```{r, fig.height = 5}
+```{r, fig.height = 2}
 # ACFs
 par(mfrow = c(1, 3))
 Acf(temp_train, lag = 40, plot = T, main = "ACF for Temperature")
@@ -200,7 +199,7 @@ Acf(dpt_train, lag = 40, plot = T, main = "ACF for Dew Pt. Temperature")
 Acf(vis_train, lag = 40, plot = T, main = "ACF for Visibility")
 ```
 
-```{r}
+```{r fig.height=2}
 # PACFs
 par(mfrow = c(1, 3))
 Pacf(temp_train, lag = 40, plot = T, main = "PACF for Temperature")
@@ -235,13 +234,21 @@ my_plot.decomposed.ts = function(x, title="", ...) {
              random = x$random), 
        main=title, ...)
 }
+```
 
+```{r, fig.height=3, fig.width=5}
 # create plots
-par(mfrow = c(1, 3))
 my_plot.decomposed.ts(decompose_temp_train, "Decomposition of Temperature")
+```
+
+```{r, fig.height=3, fig.width=5}
 my_plot.decomposed.ts(decompose_dpt_train, "Decomposition of Dew Pt. Temp")
+```
+
+```{r, fig.height=3, fig.width=5}
 my_plot.decomposed.ts(decompose_vis_train, "Decomposition of Visibility")
 ```
+
 
 We then create non-seasonal series for temperature, dew point temperature, and visibility. We find that the non-seasonal temperature series does not need to be differenced, the dew point temperature series needs to be differenced once, and the visibility series needs to be differenced once.
 
@@ -318,30 +325,47 @@ We see below that residuals for our model on temperature and visibility actually
 
 Lastly, we obtain test accuracy for the model of temperature, dew point temperature, and visibility. We will compare these test accuracies to other models in the results section of our paper. To obtain test accuracy, we use the model to forecast for our test period of April 2016 to April 2017, and then compute accuracy against our true values from April 2016 to April 2017.  
 
-```{r}
+#### Temperature: 
+
+```{r, fig.height=3, fig.width=5}
+# check residuals
+checkresiduals(SARIMA_manual_temp)
+```
+
+#### Dew Point Temperature: 
+
+```{r, fig.height=3, fig.width=5}
+# check residuals
+checkresiduals(SARIMA_manual_dpt)
+```
+
+
+#### Visibility:
+
+```{r, fig.height=3, fig.width=5}
+# check residuals
+checkresiduals(SARIMA_manual_vis)
+```
+
+
+```{r, fig.height=3}
 # examine residuals - temperature
-par(mfrow=c(1,3))
+par(mfrow = c(1, 3))
 ts.plot(SARIMA_manual_temp$residuals)
 Acf(SARIMA_manual_temp$residuals,lag.max=40, main = "ACF: Temp. Residuals")
 Pacf(SARIMA_manual_temp$residuals,lag.max=40, main = "PACF: Temp. Residuals")
 
-```
-
-```{r}
 # examine residuals - dew pt temp
-par(mfrow=c(1,3))
+par(mfrow = c(1, 3))
 ts.plot(SARIMA_manual_dpt$residuals)
-Acf(SARIMA_manual_dpt$residuals,lag.max=40, main = "ACF: Temp. Residuals")
-Pacf(SARIMA_manual_dpt$residuals,lag.max=40, main = "PACF: Temp. Residuals")
+Acf(SARIMA_manual_dpt$residuals,lag.max=40, main = "ACF: DPT Residuals")
+Pacf(SARIMA_manual_dpt$residuals,lag.max=40, main = "PACF: DPT Residuals")
 
-```
-
-```{r}
 # examine residuals - temperature
-par(mfrow=c(1,3))
+par(mfrow = c(1, 3))
 ts.plot(SARIMA_manual_temp$residuals)
-Acf(SARIMA_manual_temp$residuals,lag.max=40, main = "ACF: Temp. Residuals")
-Pacf(SARIMA_manual_temp$residuals,lag.max=40, main = "PACF: Temp. Residuals")
+Acf(SARIMA_manual_temp$residuals,lag.max=40, main = "ACF: Vis. Residuals")
+Pacf(SARIMA_manual_temp$residuals,lag.max=40, main = "PACF: Vis. Residuals")
 
 ```
 
@@ -363,27 +387,31 @@ SARIMA_manual_vis_acc <- accuracy(vis_pred, vis_test)
 
 ### Automatically Fitting Seasonal ARIMA Models
 
-Next we will fit seasonal ARIMA models and compare to the models fit above. 
+Next we will fit seasonal ARIMA models using `auto.arima` and compare to the SARIMA models we fit manually above. It appears as though we still have some residual patterns, and the residual ACF plots look very similar to those of the manually fit SARIMA model. 
 
+#### Temperature: 
 
-
-```{r}
+```{r, fig.height=3, fig.width=5}
 # fit sarima autofit on temperature
 SARIMA_autofit_temp <- auto.arima(temp_train_ts)
 checkresiduals(SARIMA_autofit_temp)
+```
 
+#### Dew Point Temperature: 
+
+```{r, fig.height=3, fig.width=5}
 # fit sarima autofit on dew point temp
 SARIMA_autofit_dpt <- auto.arima(dpt_train_ts)
 checkresiduals(SARIMA_autofit_dpt)
+```
 
+
+#### Visibility: 
+
+```{r, fig.height=3, fig.width=5}
 # fit sarima autofit on visibility
 SARIMA_autofit_vis <- auto.arima(vis_train_ts)
 checkresiduals(SARIMA_autofit_vis)
-
-# fit sarima autofit on humidity
-SARIMA_autofit_hum <- auto.arima(hum_train_ts)
-checkresiduals(SARIMA_autofit_hum)
-
 ```
 
 
@@ -391,32 +419,156 @@ checkresiduals(SARIMA_autofit_hum)
 # SARIMA forecast for temp
 SARIMA_forecast_temp <- forecast::forecast(SARIMA_autofit_temp,h=13)
 SARIMA_scores_temp <- accuracy(SARIMA_forecast_temp$mean, temp_test)
-SARIMA_scores_temp
-plot(SARIMA_forecast_temp)
+#SARIMA_scores_temp
+#plot(SARIMA_forecast_temp)
 
 # SARIMA forecast for dew point temp
 SARIMA_forecast_dpt <- forecast::forecast(SARIMA_autofit_dpt,h=13)
 SARIMA_scores_dpt <- accuracy(SARIMA_forecast_dpt$mean, dpt_test)
-SARIMA_scores_dpt
-plot(SARIMA_forecast_dpt)
+#SARIMA_scores_dpt
+#plot(SARIMA_forecast_dpt)
 
 # SARIMA forecast for visibility
 SARIMA_forecast_vis <- forecast::forecast(SARIMA_autofit_vis,h=13)
 SARIMA_scores_vis <- accuracy(SARIMA_forecast_vis$mean, vis_test)
-SARIMA_scores_vis
-plot(SARIMA_forecast_vis)
-
-# SARIMA forecast for humidity
-SARIMA_forecast_hum <- forecast::forecast(SARIMA_autofit_hum,h=13)
-SARIMA_scores_hum <- accuracy(SARIMA_forecast_hum$mean, hum_test)
-SARIMA_scores_hum
-plot(SARIMA_forecast_hum)
+#SARIMA_scores_vis
+#plot(SARIMA_forecast_vis)
 ```
 
-# Results 
 
+### TBATS Model
+
+We have also tried TBATS models below, but as they do not fit well, we will not proceed with them for analysis.
+
+```{r TBATS}
+###### Temperature
+TBATS_fit_temp <- tbats(temp_train_ts)
+
+TBATS_for_temp <- forecast::forecast(TBATS_fit_temp, h=50)
+
+###### Dew Pt. Temp.
+TBATS_fit_dpt <- tbats(dpt_train_ts)
+
+TBATS_for_dpt <- forecast::forecast(TBATS_fit_dpt, h=70)
+
+###### Visibility 
+TBATS_fit_vis <- tbats(vis_train_ts)
+
+TBATS_for_vis <- forecast::forecast(TBATS_fit_vis, h=60)
+
+
+# Get test accuracy for each
+TBATS_scores_temp <- accuracy(TBATS_for_temp$mean,temp_test_ts)
+TBATS_scores_dpt <- accuracy(TBATS_for_dpt$mean,dpt_test_ts)
+TBATS_scores_vis <- accuracy(TBATS_for_vis$mean,vis_test_ts)
+```
+
+#### Temperature: 
+
+```{r, fig.width=5, fig.height=3}
+# check residuals
+checkresiduals(TBATS_fit_temp)
+```
+
+#### Dew Point Temperature:
+
+```{r, fig.width=5, fig.height=3}
+# check residuals
+checkresiduals(TBATS_fit_dpt)
+```
+
+#### Visibility:
+
+```{r, fig.width=5, fig.height=3}
+# check residuals
+checkresiduals(TBATS_fit_vis)
+```
+Overall, we see that the residuals for the TBATS model on temperature appear to show some pattern and some seasonality, even though they do seem normally distributed. They actually look pretty similar to the residuals obtained from the SARIMA models above. The same appears to be true for the TBATS model on Dew Point Temperature as well as Visibility. 
+
+```{r, include=FALSE, eval=FALSE}
+#Plot foresting results
+par(mfrow = c(3, 1))
+autoplot(TBATS_for_temp, main = "Temperature Forecast") +
+  ylab("Temperature (Degrees Celcius)")
+
+autoplot(TBATS_for_dpt, main = "Dew Point Temp. Forecast") +
+  ylab("Dew Pt. Temp. (Degrees Celcius)") 
+
+autoplot(TBATS_for_vis, main = "Temperature Forecast") +
+  ylab("Visibility (Km)") 
+```
+
+
+## Comparing Accuracy of Models 
+
+Below we provide a comparison of the accuracy of each model using MAPE, which is the mean absolute percentage error. Recall that we trained our model on data from November 1996 to March 2016, and we use April 2016 to April 2017 as our test dataset. Thus, the MAPEs below are the MAPEs on the test dataset. 
+
+Based on the below table, we see that the SARIMA Autofit models have the lowest MAPE across the board, so we will go ahead and refit the SARIMA autofit models on all of the data from November 1996 to April 2017, and forecast from May 2017 to May 2020. 
+
+```{r}
+# Create MAPE table
+Model <- c("SARIMA Manual", "SARIMA Autofit", "TBATS")
+temp <- c(SARIMA_manual_temp_acc[5], SARIMA_scores_temp[5], 
+          TBATS_scores_temp[5])
+dpt <- c(SARIMA_manual_dpt_acc[5], SARIMA_scores_dpt[5], 
+          TBATS_scores_dpt[5])
+vis <- c(SARIMA_manual_vis_acc[5], SARIMA_scores_vis[5], 
+          TBATS_scores_vis[5])
+
+tbl <- data.frame(Model, temp, dpt, vis)
+names(tbl) <- c("Model", "Temperature", "Dew Point Temperature", "Visibility")
+
+tbl %>%
+  kbl(digits = 2, caption = "Test MAPE for each model")
+```
 
 # Summary and Conclusions
+
+## Forecasting Temperature, Dew Point Temperature, and Visibility 
+
+First we refit the models using all of the available data as mentioned above, and below we can see the three forecasts of temperature, dew point temperature, and visibility in New Delhi from May 2017 to May 2020.  
+
+```{r}
+# fit sarima autofit on temperature
+SARIMA_autofit_temp_final <- auto.arima(temp_ts)
+
+# fit sarima autofit on dew point temp
+SARIMA_autofit_dpt_final <- auto.arima(dpt_ts)
+
+# fit sarima autofit on visibility
+SARIMA_autofit_vis_final <- auto.arima(vis_ts)
+```
+
+For temperature in New Delhi, we do not see visual evidence from the plot forecast that temperatures in New Delhi are cooling. The forecasts plot from the dew point temperature plots suggest that in the colder months, dew point temperature is actually increasing slightly, though we cannot see any evidence of warmer months becoming cooler over time. For visibility, our forecast suggests that visiblity will continue to decrease over time. 
+
+Temperature: 
+
+```{r, fig.height=3, fig.width=5}
+par(mfrow = c(1, 1))
+# SARIMA forecast for temp
+SARIMA_forecast_temp_final <- forecast::forecast(SARIMA_autofit_temp_final,h=36)
+plot(SARIMA_forecast_temp_final)
+```
+
+Dew Point Temperature: 
+
+```{r, fig.height=3, fig.width=5}
+# SARIMA forecast for dew point temp
+SARIMA_forecast_dpt_final <- forecast::forecast(SARIMA_autofit_dpt_final,h=36)
+plot(SARIMA_forecast_dpt_final)
+```
+
+Visibility: 
+
+```{r, fig.height=3, fig.width=5}
+# SARIMA forecast for visibility
+SARIMA_forecast_vis_final <- forecast::forecast(SARIMA_autofit_vis_final,h=36)
+plot(SARIMA_forecast_vis_final)
+```
+
+There are of course a few limitations to note. First of all, the residuals of each of our models did suggest some violations of assumptions of our models, and thus I would not completely trust the forecasts from these models. In a more detailed analysis, I might try a few more models to see if I could find one that better represented the data. Additionally, the data used in this project is only until 2017. In a future analysis, I would like to obtain data up until the present and forecast a few years into the future to understand how temperature, dew point temperature, and visibility might change. 
+
+
 
 # Sources
 Tuholske, Cascade, et al. "Global urban population exposure to extreme heat." Proceedings of the National Academy of Sciences 118.41 (2021).
